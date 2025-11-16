@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Mindset - BLV Dashboard{% endblock %}
+
+{% block content %}
+<div x-data="mindsetApp()" x-init="init()" class="max-w-4xl mx-auto">
+
+    <!-- Header -->
+    <div class="bg-white rounded-lg shadow-sm border border-zinc-200 p-6 mb-6">
+        <h2 class="text-2xl font-bold text-zinc-900">AI Mindset Configuration</h2>
+        <p class="text-sm text-zinc-500 mt-2">
+            Configure the system prompt that defines Claude's behavior and expertise.
+            This prompt is sent with every conversation.
+        </p>
+    </div>
+
+    <!-- Editor -->
+    <div class="bg-white rounded-lg shadow-sm border border-zinc-200 p-6">
+        <div class="form-control">
+            <label class="label">
+                <span class="label-text font-semibold text-zinc-900">System Prompt</span>
+                <span class="label-text-alt text-zinc-500" x-text="systemPrompt.length + ' characters'"></span>
+            </label>
+
+            <textarea
+                x-model="systemPrompt"
+                class="textarea textarea-bordered h-96 font-mono text-sm"
+                placeholder="Enter the system prompt for Claude AI..."
+            ></textarea>
+
+            <label class="label">
+                <span class="label-text-alt text-zinc-500">
+                    Tip: Focus on security mindset, BLV analysis, economic exploits, workflow bypasses
+                </span>
+            </label>
+        </div>
+
+        <!-- Save button -->
+        <div class="mt-6 flex gap-3">
+            <button
+                @click="savePrompt()"
+                class="btn bg-zinc-900 text-white hover:bg-zinc-800"
+                :disabled="!hasChanges"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                Save Changes
+            </button>
+
+            <button
+                @click="resetPrompt()"
+                class="btn btn-ghost"
+                :disabled="!hasChanges"
+            >
+                Reset
+            </button>
+
+            <div x-show="saved" x-transition class="flex items-center text-green-600 ml-4">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Saved successfully!
+            </div>
+        </div>
+
+        <!-- Preview -->
+        <div class="mt-8 border-t border-zinc-200 pt-6">
+            <h3 class="font-semibold text-zinc-900 mb-3">Preview</h3>
+            <div class="bg-zinc-50 border border-zinc-200 rounded p-4 max-h-48 overflow-y-auto">
+                <p class="text-sm text-zinc-700 whitespace-pre-wrap" x-text="systemPrompt || 'No system prompt configured'"></p>
+            </div>
+        </div>
+
+        <!-- Templates -->
+        <div class="mt-8 border-t border-zinc-200 pt-6">
+            <h3 class="font-semibold text-zinc-900 mb-3">Quick Templates</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <button
+                    @click="loadTemplate('blv')"
+                    class="btn btn-outline btn-sm justify-start"
+                >
+                    BLV Security Expert
+                </button>
+                <button
+                    @click="loadTemplate('general')"
+                    class="btn btn-outline btn-sm justify-start"
+                >
+                    General Assistant
+                </button>
+                <button
+                    @click="loadTemplate('pentester')"
+                    class="btn btn-outline btn-sm justify-start"
+                >
+                    Pentester Mindset
+                </button>
+                <button
+                    @click="loadTemplate('researcher')"
+                    class="btn btn-outline btn-sm justify-start"
+                >
+                    Security Researcher
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function mindsetApp() {
+    return {
+        systemPrompt: '',
+        originalPrompt: '',
+        saved: false,
+
+        get hasChanges() {
+            return this.systemPrompt !== this.originalPrompt;
+        },
+
+        async init() {
+            await this.loadCurrentPrompt();
+        },
+
+        async loadCurrentPrompt() {
+            try {
+                const res = await fetch('/api/settings/system-prompt');
+                const data = await res.json();
+                this.systemPrompt = data.system_prompt || '';
+                this.originalPrompt = this.systemPrompt;
+            } catch (e) {
+                alert('Failed to load system prompt: ' + e.message);
+            }
+        },
+
+        async savePrompt() {
+            if (!this.systemPrompt.trim()) {
+                alert('System prompt cannot be empty');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/settings/system-prompt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ system_prompt: this.systemPrompt })
+                });
+
+                if (res.ok) {
+                    this.originalPrompt = this.systemPrompt;
+                    this.saved = true;
+                    setTimeout(() => this.saved = false, 3000);
+                } else {
+                    alert('Failed to save system prompt');
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        },
+
+        resetPrompt() {
+            this.systemPrompt = this.originalPrompt;
+        },
+
+        loadTemplate(type) {
+            const templates = {
+                blv: `You are a helpful security research assistant specialized in analyzing business logic vulnerabilities. Focus on economic exploits, workflow bypasses, temporal attacks, and privilege escalation.
+
+Your expertise includes:
+- Identifying race conditions and timing vulnerabilities
+- Analyzing payment flow manipulation
+- Finding authorization bypasses
+- Detecting discount/coupon abuse
+- Uncovering referral system exploits
+
+Always think like an attacker but provide defensive recommendations.`,
+
+                general: `You are Claude, a helpful and knowledgeable AI assistant created by Anthropic. You provide clear, accurate, and thoughtful responses to user questions across a wide range of topics.`,
+
+                pentester: `You are an experienced penetration tester focused on web application security testing. Your approach is methodical and thorough.
+
+Key focus areas:
+- OWASP Top 10 vulnerabilities
+- Authentication and session management
+- Input validation and injection attacks
+- Business logic flaws
+- API security testing
+
+Provide practical exploitation techniques while maintaining ethical boundaries.`,
+
+                researcher: `You are a security researcher with deep expertise in vulnerability analysis and exploit development. You approach security with both offensive and defensive perspectives.
+
+Your methodology includes:
+- Systematic code review
+- Attack surface mapping
+- Proof-of-concept development
+- Impact assessment
+- Remediation recommendations
+
+Focus on high-impact findings and clear documentation.`
+            };
+
+            this.systemPrompt = templates[type] || '';
+        }
+    }
+}
+</script>
+{% endblock %}

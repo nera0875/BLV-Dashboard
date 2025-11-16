@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Rules - BLV Dashboard{% endblock %}
+
+{% block content %}
+<div x-data="rulesApp()" x-init="loadRules()" class="max-w-4xl mx-auto">
+
+    <!-- Header -->
+    <div class="bg-white rounded-lg shadow-sm border border-zinc-200 p-6 mb-6">
+        <h2 class="text-2xl font-bold text-zinc-900">Rules Configuration</h2>
+        <p class="text-sm text-zinc-500 mt-2">Define rules and constraints for Claude's behavior. These rules are applied globally across all conversations.</p>
+    </div>
+
+    <!-- Rules Editor -->
+    <div class="bg-white rounded-lg shadow-sm border border-zinc-200 p-6">
+        <div class="form-control">
+            <label class="label">
+                <span class="label-text text-zinc-700 font-medium">Rules</span>
+                <span class="label-text-alt text-zinc-500" x-text="rulesText.length + ' characters'"></span>
+            </label>
+            <textarea
+                x-model="rulesText"
+                @input="hasChanges = true"
+                placeholder="Enter rules for Claude AI..."
+                class="textarea textarea-bordered w-full h-64 font-mono text-sm"
+                rows="15"
+            ></textarea>
+            <label class="label">
+                <span class="label-text-alt text-zinc-500">Tip: Define constraints, forbidden actions, and behavioral rules</span>
+            </label>
+        </div>
+
+        <div class="flex gap-2 mt-6">
+            <button
+                @click="saveRules()"
+                class="btn bg-zinc-900 text-white hover:bg-zinc-800"
+                :disabled="!hasChanges"
+            >
+                Save Changes
+            </button>
+            <button
+                @click="resetRules()"
+                class="btn btn-ghost"
+                :disabled="!hasChanges"
+            >
+                Reset
+            </button>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function rulesApp() {
+    return {
+        rulesText: '',
+        originalRules: '',
+        hasChanges: false,
+
+        async loadRules() {
+            try {
+                const res = await fetch('/api/settings/rules');
+                if (res.ok) {
+                    const data = await res.json();
+                    this.rulesText = data.rules || '';
+                    this.originalRules = this.rulesText;
+                    this.hasChanges = false;
+                }
+            } catch (e) {
+                console.error('Failed to load rules:', e);
+            }
+        },
+
+        async saveRules() {
+            if (!this.hasChanges) return;
+
+            try {
+                const res = await fetch('/api/settings/rules', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rules: this.rulesText })
+                });
+
+                if (res.ok) {
+                    this.originalRules = this.rulesText;
+                    this.hasChanges = false;
+                    alert('Rules saved successfully!');
+                } else {
+                    alert('Failed to save rules');
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        },
+
+        resetRules() {
+            this.rulesText = this.originalRules;
+            this.hasChanges = false;
+        }
+    }
+}
+</script>
+{% endblock %}

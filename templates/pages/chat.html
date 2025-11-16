@@ -1,0 +1,373 @@
+{% extends "base.html" %}
+
+{% block title %}Chat AI - BLV Dashboard{% endblock %}
+
+{% block content %}
+<div x-data="chatApp()" x-init="init()" class="h-[calc(100vh-3rem)] flex flex-col max-w-5xl mx-auto">
+
+    <!-- Header -->
+    <div class="bg-white rounded-lg shadow-sm border border-zinc-200 p-4 mb-4">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-2xl font-bold text-zinc-900">Chat with Claude AI</h2>
+                <p class="text-sm text-zinc-500 mt-1">Powered by Claude Sonnet 4.5</p>
+            </div>
+            <div class="flex gap-2">
+                <button
+                    @click="createNewConversation()"
+                    class="btn btn-sm bg-zinc-900 text-white hover:bg-zinc-800"
+                >
+                    New Chat
+                </button>
+            </div>
+        </div>
+
+        <!-- Conversation selector -->
+        <div class="mt-4" x-show="conversations.length > 0">
+            <label class="text-sm text-zinc-600 mb-2 block">Conversations:</label>
+            <div class="max-h-48 overflow-y-auto border border-zinc-200 rounded-lg">
+                <template x-for="conv in conversations" :key="conv.id">
+                    <div
+                        class="flex items-center gap-2 p-2 hover:bg-zinc-50 cursor-pointer"
+                        :class="currentConversationId === conv.id ? 'bg-zinc-100' : ''"
+                        @click="currentConversationId = conv.id; loadConversation()"
+                    >
+                        <div class="flex-1 min-w-0">
+                            <div class="font-medium text-sm text-zinc-900 truncate" x-text="conv.title"></div>
+                            <div class="text-xs text-zinc-500" x-text="new Date(conv.created_at).toLocaleString()"></div>
+                        </div>
+                        <div class="flex gap-1">
+                            <button
+                                @click.stop="renameConversation(conv.id, conv.title)"
+                                class="btn btn-xs btn-ghost"
+                                title="Rename"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                            </button>
+                            <button
+                                @click.stop="deleteConversation(conv.id)"
+                                class="btn btn-xs btn-ghost text-error"
+                                title="Delete"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat messages -->
+    <div class="flex-1 bg-white rounded-lg shadow-sm border border-zinc-200 overflow-hidden flex flex-col">
+        <div
+            class="flex-1 overflow-y-auto p-6 space-y-4"
+            x-ref="messagesContainer"
+        >
+            <template x-for="msg in messages" :key="msg.id || Math.random()">
+                <div
+                    class="flex gap-3"
+                    :class="msg.role === 'user' ? 'justify-end' : 'justify-start'"
+                >
+                    <div
+                        class="max-w-[80%] rounded-lg p-4"
+                        :class="msg.role === 'user'
+                            ? 'bg-zinc-900 text-white'
+                            : 'bg-zinc-100 text-zinc-900 border border-zinc-200'"
+                    >
+                        <div class="text-xs font-semibold mb-2 opacity-70">
+                            <span x-text="msg.role === 'user' ? 'You' : 'Claude'"></span>
+                        </div>
+                        <div class="prose prose-sm max-w-none" x-html="formatMessage(msg.content)"></div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Streaming message -->
+            <div x-show="isStreaming" class="flex gap-3 justify-start">
+                <div class="max-w-[80%] rounded-lg p-4 bg-zinc-100 text-zinc-900 border border-zinc-200">
+                    <div class="text-xs font-semibold mb-2 opacity-70">Claude</div>
+                    <div class="prose prose-sm max-w-none" x-html="formatMessage(streamingMessage)"></div>
+                    <span class="loading loading-dots loading-sm mt-2"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Input -->
+        <div class="border-t border-zinc-200 p-4">
+            <form @submit.prevent="sendMessage()" class="flex gap-2">
+                <textarea
+                    x-model="userInput"
+                    @keydown.enter.prevent="if (!$event.shiftKey) sendMessage()"
+                    placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+                    class="textarea textarea-bordered flex-1 resize-none"
+                    rows="2"
+                    :disabled="isStreaming"
+                ></textarea>
+
+                <!-- Stop button (shown when streaming) -->
+                <button
+                    type="button"
+                    @click="stopStreaming()"
+                    x-show="isStreaming"
+                    class="btn bg-error text-white hover:bg-error/90"
+                    title="Stop generating"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+
+                <!-- Send button (shown when not streaming) -->
+                <button
+                    type="submit"
+                    x-show="!isStreaming"
+                    class="btn bg-zinc-900 text-white hover:bg-zinc-800"
+                    :disabled="!userInput.trim()"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function chatApp() {
+    return {
+        conversations: [],
+        currentConversationId: null,
+        messages: [],
+        userInput: '',
+        isStreaming: false,
+        streamingMessage: '',
+        abortController: null,
+        reader: null,
+
+        async init() {
+            await this.loadConversations();
+            if (this.conversations.length > 0) {
+                this.currentConversationId = this.conversations[0].id;
+                await this.loadConversation();
+            } else {
+                await this.createNewConversation();
+            }
+        },
+
+        async loadConversations() {
+            try {
+                const res = await fetch('/api/conversations');
+                this.conversations = await res.json();
+            } catch (e) {
+                console.error('Failed to load conversations:', e);
+            }
+        },
+
+        async createNewConversation() {
+            try {
+                const res = await fetch('/api/conversations', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: 'New Conversation' })
+                });
+                const data = await res.json();
+                this.currentConversationId = data.id;
+                await this.loadConversations();
+                this.messages = [];
+            } catch (e) {
+                alert('Failed to create conversation: ' + e.message);
+            }
+        },
+
+        async loadConversation() {
+            if (!this.currentConversationId) return;
+
+            try {
+                const res = await fetch(`/api/conversations/${this.currentConversationId}/messages`);
+                this.messages = await res.json();
+                this.$nextTick(() => this.scrollToBottom());
+            } catch (e) {
+                console.error('Failed to load messages:', e);
+            }
+        },
+
+        async renameConversation(convId, currentTitle) {
+            const newTitle = prompt('Enter new title:', currentTitle);
+            if (!newTitle || newTitle === currentTitle) return;
+
+            try {
+                const res = await fetch(`/api/conversations/${convId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: newTitle })
+                });
+
+                if (res.ok) {
+                    await this.loadConversations();
+                } else {
+                    alert('Failed to rename conversation');
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        },
+
+        async deleteConversation(convId) {
+            if (!confirm('Delete this conversation? This cannot be undone.')) return;
+
+            try {
+                const res = await fetch(`/api/conversations/${convId}`, {
+                    method: 'DELETE'
+                });
+
+                if (res.ok) {
+                    await this.loadConversations();
+                    // If deleted current conversation, switch to another
+                    if (this.currentConversationId === convId) {
+                        if (this.conversations.length > 0) {
+                            this.currentConversationId = this.conversations[0].id;
+                            await this.loadConversation();
+                        } else {
+                            await this.createNewConversation();
+                        }
+                    }
+                } else {
+                    alert('Failed to delete conversation');
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        },
+
+        async sendMessage() {
+            if (!this.userInput.trim() || this.isStreaming) return;
+
+            const message = this.userInput.trim();
+            this.userInput = '';
+
+            // Add user message optimistically
+            this.messages.push({
+                role: 'user',
+                content: message,
+                id: Date.now()
+            });
+
+            this.$nextTick(() => this.scrollToBottom());
+
+            // Start streaming with AbortController
+            this.isStreaming = true;
+            this.streamingMessage = '';
+            this.abortController = new AbortController();
+
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        conversation_id: this.currentConversationId,
+                        message: message
+                    }),
+                    signal: this.abortController.signal
+                });
+
+                const reader = res.body.getReader();
+                this.reader = reader; // Store reference for stopStreaming()
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = JSON.parse(line.slice(6));
+
+                            if (data.chunk) {
+                                this.streamingMessage += data.chunk;
+                                this.$nextTick(() => this.scrollToBottom());
+                            }
+
+                            if (data.done) {
+                                // Add assistant message
+                                this.messages.push({
+                                    role: 'assistant',
+                                    content: this.streamingMessage,
+                                    id: Date.now()
+                                });
+                                this.streamingMessage = '';
+                                this.isStreaming = false;
+                                this.abortController = null;
+                                this.reader = null;
+                            }
+
+                            if (data.error) {
+                                alert('Error: ' + data.error);
+                                this.isStreaming = false;
+                                this.abortController = null;
+                                this.reader = null;
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                // Handle abort gracefully - save partial message
+                if (e.name === 'AbortError') {
+                    console.log('Streaming aborted by user');
+                    // Save partial message if we have any content
+                    if (this.streamingMessage.trim()) {
+                        this.messages.push({
+                            role: 'assistant',
+                            content: this.streamingMessage + '\n\n*[Response stopped by user]*',
+                            id: Date.now()
+                        });
+                    }
+                } else {
+                    // Other errors
+                    alert('Failed to send message: ' + e.message);
+                }
+
+                // Clean up state
+                this.streamingMessage = '';
+                this.isStreaming = false;
+                this.abortController = null;
+                this.reader = null;
+            }
+        },
+
+        stopStreaming() {
+            if (!this.abortController || !this.isStreaming) return;
+
+            // Abort the fetch request - this will automatically cancel the reader
+            this.abortController.abort();
+
+            // The catch block in sendMessage() will handle saving the partial message
+            // and cleaning up state, so we don't need to do it here
+        },
+
+        scrollToBottom() {
+            this.$refs.messagesContainer.scrollTop = this.$refs.messagesContainer.scrollHeight;
+        },
+
+        formatMessage(content) {
+            // Basic markdown-like formatting
+            return content
+                .replace(/```([\s\S]*?)```/g, '<pre class="bg-zinc-800 text-white p-3 rounded mt-2 overflow-x-auto"><code>$1</code></pre>')
+                .replace(/`([^`]+)`/g, '<code class="bg-zinc-200 px-1 rounded text-sm">$1</code>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\n/g, '<br>');
+        }
+    }
+}
+</script>
+{% endblock %}
